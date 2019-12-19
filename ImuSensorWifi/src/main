@@ -1,0 +1,93 @@
+#include <Arduino.h>
+
+#include "MPU9250.h"
+#include "madg.h"
+
+// множитель фильтра
+#define BETA 0.22
+
+MPU9250 IMU(SPI, 5);
+
+// создаём объект для фильтра Madgwick
+Madgwick filter;
+
+// переменные для данных с гироскопа, акселерометра и компаса
+float gx, gy, gz, ax, ay, az, mx, my, mz;
+
+// получаемые углы ориентации (Эйлера)
+float yaw, pitch, roll;
+
+// переменная для хранения частоты выборок фильтра
+float fps_ = 100.0;
+
+void setup()
+{
+  Serial.begin(115200);
+  Serial.println("Start init...");
+
+  int status_;
+  status_ = IMU.begin();
+  if (status_ < 0)
+  {
+    Serial.println("IMU initialization unsuccessful");
+    Serial.println("Check IMU wiring or try cycling power");
+    Serial.print("Status: ");
+    Serial.println(status_);
+    while (1)
+    {
+    }
+  }
+
+  Serial.println("Init end");
+}
+
+void loop()
+{
+
+  // запоминаем текущее время
+  unsigned long startMillis = millis();
+
+  // read the sensor
+  IMU.readSensor();
+
+  ax = IMU.getAccelX_mss();
+  ay = IMU.getAccelY_mss();
+  az = IMU.getAccelZ_mss();
+
+  gx = IMU.getGyroX_rads();
+  gy = IMU.getGyroY_rads();
+  gz = IMU.getGyroZ_rads();
+
+  mx = IMU.getMagX_uT();
+  my = IMU.getMagY_uT();
+  mz = IMU.getMagZ_uT();
+
+  // устанавливаем коэффициенты фильтра
+  filter.setKoeff(fps_, BETA);
+  // обновляем входные данные в фильтр
+  filter.update(gx, gy, gz, ax, ay, az, mx, my, mz);
+
+  if (Serial.available() > 0)
+  {
+    int val = Serial.read();
+    // если пришёл символ 's'
+    if (val == 's')
+    {
+      float q0, q1, q2, q3;
+      filter.readQuaternions(&q0, &q1, &q2, &q3);
+      // выводим кватернионы в serial-порт
+      Serial.print(q0);
+      Serial.print(",");
+      Serial.print(q1);
+      Serial.print(",");
+      Serial.print(q2);
+      Serial.print(",");
+      Serial.println(q3);
+    }
+  }
+
+  // вычисляем затраченное время на обработку данных
+  unsigned long deltaMillis = millis() - startMillis;
+  // вычисляем частоту обработки фильтра
+  fps_ = 1000.0 / deltaMillis;
+}
